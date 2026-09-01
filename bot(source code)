@@ -1,0 +1,570 @@
+require("dotenv").config({ path: ".env2" });
+const fs = require("fs");
+
+const {
+    Client,
+    GatewayIntentBits,
+    Events,
+    REST,
+    Routes,
+    SlashCommandBuilder,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ChannelType,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    PermissionFlagsBits
+} = require("discord.js");
+
+// ================= CONFIG =================
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+const RESULTS_CHANNEL = process.env.RESULTS_CHANNEL_ID;
+const TESTER_ROLE_ID = process.env.TESTER_ROLE_ID;
+
+// ================= SAFETY =================
+if (!TOKEN) throw new Error("❌ TOKEN missing");
+if (!CLIENT_ID) throw new Error("❌ CLIENT_ID missing");
+if (!GUILD_ID) throw new Error("❌ GUILD_ID missing");
+if (!RESULTS_CHANNEL) throw new Error("❌ RESULTS_CHANNEL_ID missing");
+if (!TESTER_ROLE_ID) throw new Error("❌ TESTER_ROLE_ID missing");
+
+// ================= FILE =================
+const FILE = "./leaderboard.json";
+
+if (!fs.existsSync(FILE)) {
+    fs.writeFileSync(FILE, JSON.stringify({}, null, 2));
+}
+
+const loadLB = () => {
+    try {
+        return JSON.parse(fs.readFileSync(FILE, "utf8"));
+    } catch (err) {
+        console.error("❌ Failed to load leaderboard.json:", err);
+
+        fs.writeFileSync(FILE, JSON.stringify({}, null, 2));
+        return {};
+    }
+};
+
+const saveLB = (d) => {
+    try {
+        fs.writeFileSync(FILE, JSON.stringify(d, null, 2));
+    } catch (err) {
+        console.error("❌ Failed to save leaderboard.json:", err);
+    }
+};
+
+// ================= CLIENT =================
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds]
+});
+
+// ================= COMMANDS =================
+const commands = [
+
+    new SlashCommandBuilder()
+        .setName("setrank")
+        .setDescription("Set player tier")
+        .addUserOption(o =>
+            o
+                .setName("user")
+                .setDescription("Player")
+                .setRequired(true)
+        )
+        .addStringOption(o =>
+            o
+                .setName("tier")
+                .setDescription("Tier")
+                .setRequired(true)
+        ),
+
+    new SlashCommandBuilder()
+        .setName("leaderboard")
+        .setDescription("Show TOP 10 leaderboard"),
+
+    new SlashCommandBuilder()
+        .setName("announce")
+        .setDescription("Send announcement")
+        .addStringOption(o =>
+            o
+                .setName("message")
+                .setDescription("Message")
+                .setRequired(true)
+        ),
+
+    new SlashCommandBuilder()
+        .setName("results")
+        .setDescription("Submit tier result")
+        .addUserOption(o =>
+            o
+                .setName("player")
+                .setDescription("Player")
+                .setRequired(true)
+        )
+        .addUserOption(o =>
+            o
+                .setName("tester")
+                .setDescription("Tester")
+                .setRequired(true)
+        )
+        .addStringOption(o =>
+            o
+                .setName("gamemode")
+                .setDescription("Gamemode")
+                .setRequired(true)
+        )
+        .addStringOption(o =>
+            o
+                .setName("score")
+                .setDescription("Score")
+                .setRequired(true)
+        )
+        .addStringOption(o =>
+            o
+                .setName("tier")
+                .setDescription("Tier")
+                .setRequired(true)
+        )
+        .addStringOption(o =>
+            o
+                .setName("replay")
+                .setDescription("Replay")
+                .setRequired(true)
+        )
+        .addStringOption(o =>
+            o
+                .setName("comment")
+                .setDescription("Comment")
+                .setRequired(true)
+        ),
+
+    new SlashCommandBuilder()
+        .setName("testing_panel")
+        .setDescription("MCBE control panel")
+
+].map(c => c.toJSON());
+
+// ================= REGISTER =================
+const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+(async () => {
+    try {
+        await rest.put(
+            Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+            { body: commands }
+        );
+
+        console.log("✅ Commands registered");
+    } catch (err) {
+        console.error("❌ Failed to register commands:", err);
+    }
+})();
+
+// ================= READY =================
+client.once(Events.ClientReady, () => {
+    console.log(`Bot online: ${client.user.tag}`);
+});
+
+// ================= INTERACTIONS =================
+client.on(Events.InteractionCreate, async interaction => {
+
+    try {
+
+        // ================= SLASH COMMANDS =================
+        if (interaction.isChatInputCommand()) {
+
+            // ================= SETRANK =================
+            if (interaction.commandName === "setrank") {
+
+                const user = interaction.options.getUser("user");
+                const tier = interaction.options.getString("tier");
+
+                const data = loadLB();
+
+                data[user.id] = {
+                    name: user.username,
+                    tier
+                };
+
+                saveLB(data);
+
+                return await interaction.reply(
+                    `✅ ${user.username} assigned ${tier}`
+                );
+            }
+
+            // ================= LEADERBOARD =================
+            if (interaction.commandName === "leaderboard") {
+
+                const data = loadLB();
+
+                const sorted = Object.entries(data)
+                    .slice(0, 10)
+                    .map(
+                        (x, i) =>
+                            `No.${i + 1}: ${x[1].name || "Open"}`
+                    )
+                    .join("\n");
+
+                return await interaction.reply({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle("TOP 10")
+                            .setDescription(sorted || "No data")
+                            .setColor(0xFFD700)
+                    ]
+                });
+            }
+
+            // ================= ANNOUNCE =================
+            if (interaction.commandName === "announce") {
+
+                const message =
+                    interaction.options.getString("message");
+
+                return await interaction.reply({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle("Announcement")
+                            .setDescription(message)
+                            .setColor(0x3498db)
+                    ]
+                });
+            }
+
+            // ================= RESULTS =================
+            if (interaction.commandName === "results") {
+
+                // Fetching the member can take time,
+                // so acknowledge the interaction FIRST.
+                await interaction.deferReply({
+                    ephemeral: true
+                });
+
+                const member =
+                    await interaction.guild.members.fetch(
+                        interaction.user.id
+                    );
+
+                if (!member.roles.cache.has(TESTER_ROLE_ID)) {
+                    return await interaction.editReply({
+                        content: "❌ You need Tester role"
+                    });
+                }
+
+                const player =
+                    interaction.options.getUser("player");
+
+                const tester =
+                    interaction.options.getUser("tester");
+
+                const gamemode =
+                    interaction.options.getString("gamemode");
+
+                const score =
+                    interaction.options.getString("score");
+
+                const tier =
+                    interaction.options.getString("tier");
+
+                const replay =
+                    interaction.options.getString("replay");
+
+                const comment =
+                    interaction.options.getString("comment");
+
+                const channel =
+                    await client.channels.fetch(RESULTS_CHANNEL);
+
+                if (!channel) {
+                    return await interaction.editReply({
+                        content: "❌ Results channel not found."
+                    });
+                }
+
+                await channel.send({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle("Tier Result")
+                            .setColor(0x3498db)
+                            .addFields(
+                                {
+                                    name: "Player",
+                                    value: `<@${player.id}>`,
+                                    inline: true
+                                },
+                                {
+                                    name: "Tester",
+                                    value: `<@${tester.id}>`,
+                                    inline: true
+                                },
+                                {
+                                    name: "Gamemode",
+                                    value: gamemode,
+                                    inline: true
+                                },
+                                {
+                                    name: "Score",
+                                    value: score,
+                                    inline: true
+                                },
+                                {
+                                    name: "Tier",
+                                    value: tier,
+                                    inline: true
+                                },
+                                {
+                                    name: "Replay",
+                                    value: replay || "none"
+                                },
+                                {
+                                    name: "Comment",
+                                    value: comment || "none"
+                                }
+                            )
+                    ]
+                });
+
+                return await interaction.editReply({
+                    content: "✅ Result sent!"
+                });
+            }
+
+            // ================= PANEL =================
+            if (interaction.commandName === "testing_panel") {
+
+                const row =
+                    new ActionRowBuilder().addComponents(
+
+                        new ButtonBuilder()
+                            .setCustomId("hive_sumo")
+                            .setLabel("Hive Sumo")
+                            .setStyle(ButtonStyle.Primary),
+
+                        new ButtonBuilder()
+                            .setCustomId("hive_skywars")
+                            .setLabel("Hive Skywars")
+                            .setStyle(ButtonStyle.Primary),
+
+                        new ButtonBuilder()
+                            .setCustomId("builduhc")
+                            .setLabel("BuildUHC")
+                            .setStyle(ButtonStyle.Primary),
+
+                        new ButtonBuilder()
+                            .setCustomId("bedfight")
+                            .setLabel("Bedfight")
+                            .setStyle(ButtonStyle.Primary)
+                    );
+
+                const row2 =
+                    new ActionRowBuilder().addComponents(
+
+                        new ButtonBuilder()
+                            .setCustomId("nodebuff")
+                            .setLabel("Nodebuff")
+                            .setStyle(ButtonStyle.Primary),
+
+                        new ButtonBuilder()
+                            .setCustomId("midfight")
+                            .setLabel("Midfight")
+                            .setStyle(ButtonStyle.Primary)
+                    );
+
+                return await interaction.reply({
+                    content: "Select Gamemode:",
+                    components: [row, row2]
+                });
+            }
+        }
+
+        // ================= BUTTON HANDLER =================
+        if (interaction.isButton()) {
+
+            const modes = {
+                hive_sumo: "Hive Sumo",
+                hive_skywars: "Hive Skywars",
+                builduhc: "Build UHC",
+                bedfight: "Bedfight",
+                nodebuff: "Nodebuff",
+                midfight: "Midfight"
+            };
+
+            // ================= GAMEMODE BUTTON =================
+            if (modes[interaction.customId]) {
+
+                const modal =
+                    new ModalBuilder()
+                        .setCustomId(
+                            `ticket_modal_${interaction.customId}`
+                        )
+                        .setTitle(
+                            `${modes[interaction.customId]} Ticket`
+                        );
+
+                const ign =
+                    new TextInputBuilder()
+                        .setCustomId("ign")
+                        .setLabel("IGN")
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true);
+
+                const region =
+                    new TextInputBuilder()
+                        .setCustomId("region")
+                        .setLabel("Region")
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(true);
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(ign),
+                    new ActionRowBuilder().addComponents(region)
+                );
+
+                return await interaction.showModal(modal);
+            }
+
+            // ================= CLOSE TICKET =================
+            if (interaction.customId === "close_ticket") {
+
+                // Acknowledge the button first.
+                // This prevents Unknown Interaction if deletion takes time.
+                await interaction.deferUpdate();
+
+                if (!interaction.channel) {
+                    return;
+                }
+
+                return await interaction.channel.delete();
+            }
+        }
+
+        // ================= MODALS =================
+        if (interaction.isModalSubmit()) {
+
+            if (interaction.customId.startsWith("ticket_modal_")) {
+
+                // Modal submission also has a 3-second limit.
+                // Defer BEFORE creating the channel.
+                await interaction.deferReply({
+                    ephemeral: true
+                });
+
+                const mode =
+                    interaction.customId.replace(
+                        "ticket_modal_",
+                        ""
+                    );
+
+                const ign =
+                    interaction.fields.getTextInputValue("ign");
+
+                const region =
+                    interaction.fields.getTextInputValue("region");
+
+                const channel =
+                    await interaction.guild.channels.create({
+                        name: `${mode}-${interaction.user.username}`,
+                        type: ChannelType.GuildText,
+
+                        permissionOverwrites: [
+                            {
+                                id: interaction.guild.id,
+                                deny: [
+                                    PermissionFlagsBits.ViewChannel
+                                ]
+                            },
+
+                            {
+                                id: interaction.user.id,
+                                allow: [
+                                    PermissionFlagsBits.ViewChannel,
+                                    PermissionFlagsBits.SendMessages
+                                ]
+                            },
+
+                            {
+                                id: TESTER_ROLE_ID,
+                                allow: [
+                                    PermissionFlagsBits.ViewChannel,
+                                    PermissionFlagsBits.SendMessages
+                                ]
+                            }
+                        ]
+                    });
+
+                await channel.send({
+                    content: `<@${interaction.user.id}>`,
+
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle(`Ticket - ${mode}`)
+                            .setDescription(
+                                `IGN: ${ign}\nRegion: ${region}`
+                            )
+                    ],
+
+                    components: [
+                        new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setCustomId("close_ticket")
+                                .setLabel("Close")
+                                .setStyle(ButtonStyle.Danger)
+                        )
+                    ]
+                });
+
+                return await interaction.editReply({
+                    content: `Ticket created: ${channel}`
+                });
+            }
+        }
+
+    } catch (err) {
+
+        console.error("❌ Interaction Error:", err);
+
+        // ================= SAFE ERROR RESPONSE =================
+        try {
+
+            if (interaction.deferred) {
+
+                await interaction.editReply({
+                    content:
+                        "❌ An error occurred while processing this interaction."
+                });
+
+            } else if (!interaction.replied) {
+
+                await interaction.reply({
+                    content:
+                        "❌ An error occurred while processing this interaction.",
+                    ephemeral: true
+                });
+
+            }
+
+        } catch (replyError) {
+
+            // If Discord already considers the interaction expired,
+            // don't crash the entire bot.
+            console.error(
+                "❌ Failed to send error response:",
+                replyError
+            );
+        }
+    }
+});
+
+// ================= CLIENT ERROR =================
+client.on(Events.Error, err => {
+    console.error("❌ Discord Client Error:", err);
+});
+
+// ================= LOGIN =================
+client.login(TOKEN);
